@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SafarSafe - Tourist Simulator</title>
+    <style>
+        body { font-family: sans-serif; background-color: #f0f2f5; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .container { background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 400px; }
+        h1 { color: #1c1e21; text-align: center; }
+        input, button { width: 100%; padding: 12px; margin-bottom: 1rem; border-radius: 6px; border: 1px solid #ddd; box-sizing: border-box; }
+        button { background-color: #007bff; color: white; font-weight: bold; border: none; cursor: pointer; transition: background-color 0.2s; }
+        button:hover { background-color: #0056b3; }
+        button:disabled { background-color: #ccc; cursor: not-allowed; }
+        #status { text-align: center; font-weight: bold; margin-top: 1rem; padding: 10px; border-radius: 6px; }
+        .status-connected { color: #28a745; background-color: #e9f7ef; }
+        .status-disconnected { color: #dc3545; background-color: #fdeeee; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Tourist App Simulator</h1>
+    <textarea id="jwtToken" placeholder="Paste JWT Token from Login here..." rows="4" style="width:100%; margin-bottom: 1rem;"></textarea>
+    <button id="connectBtn">Connect</button>
+    <hr style="border: none; border-top: 1px solid #eee; margin: 1rem 0;">
+    <button id="sendLocationBtn" disabled>Send Location Update</button>
+    <button id="panicBtn" disabled>PANIC</button>
+    <div id="status" class="status-disconnected">Disconnected</div>
+</div>
+
+<script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+<script>
+    const connectBtn = document.getElementById('connectBtn');
+    const sendLocationBtn = document.getElementById('sendLocationBtn');
+    const panicBtn = document.getElementById('panicBtn');
+    const statusDiv = document.getElementById('status');
+    const jwtTokenInput = document.getElementById('jwtToken');
+
+    let socket;
+    let touristId = null;
+
+    // Function to decode JWT and get tourist ID
+    function getTouristIdFromToken(token) {
+        if (!token) return null;
+        try {
+            const payload = JSON.parse(atob(token.split('.')[1]));
+            return payload.sub; // 'sub' is the standard claim for subject (user ID)
+        } catch (e) {
+            console.error("Invalid JWT token", e);
+            return null;
+        }
+    }
+
+    connectBtn.addEventListener('click', () => {
+        if (socket && socket.connected) {
+            socket.disconnect();
+            return;
+        }
+        
+        touristId = getTouristIdFromToken(jwtTokenInput.value);
+        if (!touristId) {
+            alert("Please paste a valid JWT token first.");
+            return;
+        }
+
+        socket = io("http://localhost:5000");
+
+        socket.on('connect', () => {
+            statusDiv.textContent = 'Connected!';
+            statusDiv.className = 'status-connected';
+            connectBtn.textContent = 'Disconnect';
+            sendLocationBtn.disabled = false;
+            panicBtn.disabled = false;
+        });
+
+        socket.on('disconnect', () => {
+            statusDiv.textContent = 'Disconnected';
+            statusDiv.className = 'status-disconnected';
+            connectBtn.textContent = 'Connect';
+            sendLocationBtn.disabled = true;
+            panicBtn.disabled = true;
+        });
+    });
+
+    sendLocationBtn.addEventListener('click', () => {
+        const locationData = {
+            touristId: touristId,
+            // Random location near Chennai for testing
+            latitude: 12.82 + (Math.random() - 0.5) * 0.1,
+            longitude: 80.04 + (Math.random() - 0.5) * 0.1,
+        };
+        socket.emit('updateLocation', locationData);
+        console.log("Sent location:", locationData);
+        alert(`Sent location update for tourist ${touristId}`);
+    });
+
+    panicBtn.addEventListener('click', async () => {
+        const token = jwtTokenInput.value;
+        const locationData = {
+            latitude: 12.823,
+            longitude: 80.044,
+        };
+
+        try {
+            const response = await fetch('http://localhost:5000/api/tourist/panic', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify(locationData)
+            });
+            const result = await response.json();
+            if (response.ok) {
+                alert('Panic alert sent successfully!');
+                console.log(result);
+            } else {
+                throw new Error(result.error);
+            }
+        } catch (error) {
+            alert('Failed to send panic alert.');
+            console.error(error);
+        }
+    });
+
+</script>
+
+</body>
+</html>

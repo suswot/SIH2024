@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=5.0">
+    <title>SafarSafe - Dashboard</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <style>
+        body, html { height: 100%; margin: 0; padding: 0; font-family: sans-serif; display: flex; }
+        #map { width: 95%; height: 100%; }
+        #sidebar { width: 45%; height: 100%; overflow-y: auto; box-shadow: -2px 0 5px rgba(0,0,0,0.1); padding: 1rem; box-sizing: border-box; }
+        h2 { text-align: center; color: #333; }
+        ul { list-style-type: none; padding: 0; }
+        li { background-color: #f8f9fa; border: 1px solid #dee2e6; padding: 10px; margin-bottom: 5px; border-radius: 4px; font-size: 0.9em; }
+        .panic { background-color: #dc3545; color: white; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div id="map"></div>
+<div id="sidebar">
+    <h2>Live Alerts</h2>
+    <ul id="alertList">
+        <li>No alerts yet...</li>
+    </ul>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+<script>
+    // Initialize map
+    const map = L.map('map').setView([12.823, 80.044], 13); // Centered on a location in Tamil Nadu
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(map);
+
+    const alertList = document.getElementById('alertList');
+    const touristMarkers = {}; // Store markers by touristId
+
+    const socket = io("http://localhost:5000");
+
+    socket.on('connect', () => {
+        console.log('Connected to server!');
+        const firstAlert = alertList.querySelector('li');
+        if (firstAlert && firstAlert.textContent.includes('No alerts')) {
+            firstAlert.textContent = "Connected. Listening for events...";
+            firstAlert.style.backgroundColor = '#28a745';
+            firstAlert.style.color = 'white';
+        }
+    });
+
+    // Listen for regular location updates
+    socket.on('tourist-location-change', (data) => {
+        console.log('Location update received:', data);
+        const { touristId, latitude, longitude } = data;
+
+        if (touristMarkers[touristId]) {
+            // Update existing marker
+            touristMarkers[touristId].setLatLng([latitude, longitude]);
+        } else {
+            // Create a new marker
+            touristMarkers[touristId] = L.marker([latitude, longitude]).addTo(map)
+                .bindPopup(`Tourist ID: ${touristId.substring(0, 8)}...`);
+        }
+        map.panTo([latitude, longitude]);
+    });
+
+    // Listen for panic alerts
+    socket.on('new-panic-alert', (data) => {
+        console.log('PANIC ALERT RECEIVED:', data);
+        const { touristId, location } = data;
+
+        // Add a prominent panic marker
+        L.marker([location.latitude, location.longitude], {
+            icon: L.divIcon({className: 'blinking-panic-icon'})
+        }).addTo(map)
+        .bindPopup(`<b>PANIC ALERT!</b><br>Tourist ID: ${touristId.substring(0, 8)}...`).openPopup();
+        
+        map.setView([location.latitude, location.longitude], 15);
+
+        // Add to alert list
+        const alertItem = document.createElement('li');
+        alertItem.className = 'panic';
+        alertItem.textContent = `PANIC from ${touristId.substring(0, 8)}... at ${new Date().toLocaleTimeString()}`;
+        alertList.prepend(alertItem);
+    });
+
+</script>
+<style>.blinking-panic-icon { background-color: red; border-radius: 50%; width: 20px; height: 20px; border: 2px solid white; box-shadow: 0 0 10px red; animation: blink 1s infinite; } @keyframes blink { 50% { opacity: 0.5; } }</style>
+
+</body>
+</html>
